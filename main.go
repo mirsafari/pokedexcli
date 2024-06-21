@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"html/template"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -13,10 +15,11 @@ import (
 )
 
 type config struct {
-	Url      string
-	Next     string
-	Previous string
-	Cache    *pokecache.Cache
+	Url              string
+	Next             string
+	Previous         string
+	Cache            *pokecache.Cache
+	PokemonContainer map[string]pokeapi.PokemonDetails
 }
 type cliCommand struct {
 	name        string
@@ -58,13 +61,23 @@ func initializeCommands() {
 	}
 	commands["explore"] = cliCommand{
 		name:        "explore",
-		description: "See a list of all the Pokémon in a given area. Provide a location name",
+		description: "See a list of all the Pokémon in a given area. Provide a location name as argument",
 		callback:    commandExplore,
 	}
 	commands["catch"] = cliCommand{
 		name:        "catch",
-		description: "Catching Pokemon adds them to the user's Pokedex. Provide a Pokemon name",
-		callback:    commandExplore,
+		description: "Catching Pokemon adds them to the user's Pokedex. Provide a Pokemon name as argument",
+		callback:    commandCatch,
+	}
+	commands["inspect"] = cliCommand{
+		name:        "inspect",
+		description: "Prints the name, height, weight, stats and type(s) of the. Provide a Pokemon name as argument",
+		callback:    commandInspect,
+	}
+	commands["pokedex"] = cliCommand{
+		name:        "pokedex",
+		description: "Prints a list of all the names of the Pokemon the user has caught",
+		callback:    commandPokedex,
 	}
 	return
 }
@@ -73,7 +86,7 @@ func printPrompt() {
 	fmt.Print(cliName, "> ")
 }
 
-func commandHelp(cfg *config, arg string) error {
+func commandHelp(cfg *config, _ string) error {
 	fmt.Println("Wellcome to the Pokedex!")
 	fmt.Println("Usage:")
 	fmt.Println("")
@@ -86,26 +99,29 @@ func commandHelp(cfg *config, arg string) error {
 	return nil
 }
 
-func commandExit(cfg *config, arg string) error {
+func commandExit(cfg *config, _ string) error {
 	os.Exit(0)
 	return nil
 }
 
-func commandMap(cfg *config, arg string) error {
+func commandMap(cfg *config, _ string) error {
 	locations, err := pokeapi.GetLocations(cfg.Next, cfg.Cache)
 
 	if err != nil {
 		return err
 	}
 
-	printLocations(locations)
+	for _, location := range locations.Results {
+		fmt.Println(location.Name)
+	}
+
 	cfg.Previous = locations.Previous
 	cfg.Next = locations.Next
 
 	return nil
 }
 
-func commandMapb(cfg *config, arg string) error {
+func commandMapb(cfg *config, _ string) error {
 	if cfg.Previous == "" {
 		return errors.New("Can not go backwards on first location")
 	}
@@ -115,7 +131,10 @@ func commandMapb(cfg *config, arg string) error {
 		return err
 	}
 
-	printLocations(locations)
+	for _, location := range locations.Results {
+		fmt.Println(location.Name)
+	}
+
 	cfg.Previous = locations.Previous
 	cfg.Next = locations.Next
 
@@ -131,39 +150,82 @@ func commandExplore(cfg *config, location string) error {
 		return err
 	}
 
-	printPokemons(locationDetails)
-
-	return nil
-
-}
-
-func commandCatch(cfg *config, pokemon string) error {
-
-	return nil
-
-}
-func printLocations(locations pokeapi.Locations) {
-
-	for _, location := range locations.Results {
-		fmt.Println(location.Name)
-	}
-
-	return
-}
-
-func printPokemons(location pokeapi.LocationDetails) {
-
 	fmt.Println("Found Pokemon:")
-	for _, pokemon := range location.PokemonEncounters {
+	for _, pokemon := range locationDetails.PokemonEncounters {
 		fmt.Println(" -", pokemon.Pokemon.Name)
 	}
 
-	return
+	return nil
+
+}
+
+func commandCatch(cfg *config, pokemonName string) error {
+
+	pokemonDetails, err := pokeapi.GetPokemonDetails(pokemonName, cfg.Cache)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Throwing a Pokeball at " + pokemonName + "...")
+
+	randomValue := rand.New(rand.NewSource(time.Now().UnixNano())).Float64()
+	catchProbability := 1 / (1 + float64(pokemonDetails.BaseExperience)/100.0)
+
+	if randomValue < catchProbability {
+		fmt.Println(pokemonName + " was caught!")
+		fmt.Println("You may now inspect it with the inspect command.")
+		cfg.PokemonContainer[pokemonName] = pokemonDetails
+		return nil
+	}
+
+	return errors.New(pokemonName + " escaped!")
+}
+
+func commandInspect(cfg *config, pokemonName string) error {
+
+	pokemon, caught := cfg.PokemonContainer[pokemonName]
+	if !caught {
+		return errors.New("you have not caught that pokemon")
+	}
+
+	const tpl = `Name: {{.Name}}
+Height: {{.Height}}
+Weight: {{.Weight}}
+Stats:
+{{- range .Stats }}
+  -{{ .Stat.Name }}: {{ .BaseStat }}
+{{- end }}
+Types:
+{{- range .Types }}
+  - {{ .Type.Name }}
+{{- end }}
+`
+	tmpl, err := template.New("pokemon").Parse(tpl)
+	if err != nil {
+		return err
+	}
+
+	err = tmpl.Execute(os.Stdout, pokemon)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func commandPokedex(cfg *config, _ string) error {
+	fmt.Println("Your Pokedex:")
+	for k := range cfg.PokemonContainer {
+		fmt.Println(" -", k)
+	}
+	return nil
 }
 
 func main() {
 	initializeCommands()
 	cfg.Cache = pokecache.NewCache(time.Minute * 2)
+	cfg.PokemonContainer = make(map[string]pokeapi.PokemonDetails)
 	reader := bufio.NewScanner(os.Stdin)
 	printPrompt()
 	for reader.Scan() {
