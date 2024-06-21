@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mirsafari/pokedexcli/internal/pokeapi"
@@ -20,7 +21,7 @@ type config struct {
 type cliCommand struct {
 	name        string
 	description string
-	callback    func(*config) error
+	callback    func(*config, string) error
 }
 
 var (
@@ -28,7 +29,7 @@ var (
 	cliName  string = "Pokedex"
 	cfg      config = config{
 		Url:      "",
-		Next:     "https://pokeapi.co/api/v2/location-area?offset=0",
+		Next:     "https://pokeapi.co/api/v2/location-area?offset=0&limit=20",
 		Previous: "",
 	}
 )
@@ -55,6 +56,16 @@ func initializeCommands() {
 		description: "Similar to the map command, however, instead of displaying the next 20 locations, it displays the previous 20 locations",
 		callback:    commandMapb,
 	}
+	commands["explore"] = cliCommand{
+		name:        "explore",
+		description: "See a list of all the Pokémon in a given area. Provide a location name",
+		callback:    commandExplore,
+	}
+	commands["catch"] = cliCommand{
+		name:        "catch",
+		description: "Catching Pokemon adds them to the user's Pokedex. Provide a Pokemon name",
+		callback:    commandExplore,
+	}
 	return
 }
 
@@ -62,7 +73,7 @@ func printPrompt() {
 	fmt.Print(cliName, "> ")
 }
 
-func commandHelp(*config) error {
+func commandHelp(cfg *config, arg string) error {
 	fmt.Println("Wellcome to the Pokedex!")
 	fmt.Println("Usage:")
 	fmt.Println("")
@@ -75,12 +86,12 @@ func commandHelp(*config) error {
 	return nil
 }
 
-func commandExit(*config) error {
+func commandExit(cfg *config, arg string) error {
 	os.Exit(0)
 	return nil
 }
 
-func commandMap(cfg *config) error {
+func commandMap(cfg *config, arg string) error {
 	locations, err := pokeapi.GetLocations(cfg.Next, cfg.Cache)
 
 	if err != nil {
@@ -94,7 +105,7 @@ func commandMap(cfg *config) error {
 	return nil
 }
 
-func commandMapb(cfg *config) error {
+func commandMapb(cfg *config, arg string) error {
 	if cfg.Previous == "" {
 		return errors.New("Can not go backwards on first location")
 	}
@@ -111,10 +122,40 @@ func commandMapb(cfg *config) error {
 	return nil
 }
 
+func commandExplore(cfg *config, location string) error {
+
+	fmt.Println("Exploring " + location + "...")
+	locationDetails, err := pokeapi.GetLocationDetails(location, cfg.Cache)
+
+	if err != nil {
+		return err
+	}
+
+	printPokemons(locationDetails)
+
+	return nil
+
+}
+
+func commandCatch(cfg *config, pokemon string) error {
+
+	return nil
+
+}
 func printLocations(locations pokeapi.Locations) {
 
 	for _, location := range locations.Results {
 		fmt.Println(location.Name)
+	}
+
+	return
+}
+
+func printPokemons(location pokeapi.LocationDetails) {
+
+	fmt.Println("Found Pokemon:")
+	for _, pokemon := range location.PokemonEncounters {
+		fmt.Println(" -", pokemon.Pokemon.Name)
 	}
 
 	return
@@ -126,9 +167,15 @@ func main() {
 	reader := bufio.NewScanner(os.Stdin)
 	printPrompt()
 	for reader.Scan() {
-		text := reader.Text()
-		if command, exists := commands[text]; exists {
-			err := command.callback(&cfg)
+		input := strings.Fields(reader.Text())
+		cmd := input[0]
+		arg := ""
+		if len(input) == 2 {
+			arg = input[1]
+		}
+
+		if command, exists := commands[cmd]; exists {
+			err := command.callback(&cfg, arg)
 			if err != nil {
 				fmt.Println(err)
 			}
