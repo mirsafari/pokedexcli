@@ -21,10 +21,9 @@ type Locations struct {
 }
 
 func GetLocations(url string, cache *pokecache.Cache) (Locations, error) {
-
 	locations := Locations{}
-	data, inCache := cache.Get(url)
 
+	data, inCache := cache.Get(url)
 	if inCache == false {
 		res, err := http.Get(url)
 		if err != nil {
@@ -32,6 +31,7 @@ func GetLocations(url string, cache *pokecache.Cache) (Locations, error) {
 		}
 		data, err = io.ReadAll(res.Body)
 		res.Body.Close()
+
 		if res.StatusCode > 299 {
 			return locations, errors.New(fmt.Sprintf("Response failed with status code %d", res.StatusCode))
 		}

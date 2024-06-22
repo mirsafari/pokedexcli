@@ -11,18 +11,10 @@ import (
 )
 
 type PokemonDetails struct {
-	Name      string `json:"name"`
-	Abilities []struct {
-		Ability struct {
-			Name string `json:"name"`
-			URL  string `json:"url"`
-		} `json:"ability"`
-		IsHidden bool `json:"is_hidden"`
-		Slot     int  `json:"slot"`
-	} `json:"abilities"`
-	BaseExperience int `json:"base_experience"`
-	Height         int `json:"height"`
-	Weight         int `json:"weight"`
+	Name           string `json:"name"`
+	BaseExperience int    `json:"base_experience"`
+	Height         int    `json:"height"`
+	Weight         int    `json:"weight"`
 	Stats          []struct {
 		BaseStat int `json:"base_stat"`
 		Effort   int `json:"effort"`
@@ -40,17 +32,19 @@ type PokemonDetails struct {
 	} `json:"types"`
 }
 
-func GetPokemonDetails(pokemonName string, cache *pokecache.Cache) (PokemonDetails, error) {
+func GetPokemonDetails(endpoint, pokemonName string, cache *pokecache.Cache) (PokemonDetails, error) {
 	pokemonDetails := PokemonDetails{}
-	data, inCache := cache.Get(pokemonName)
 
+	data, inCache := cache.Get(pokemonName)
 	if inCache == false {
-		res, err := http.Get("https://pokeapi.co/api/v2/pokemon/" + pokemonName)
+		res, err := http.Get(endpoint + "pokemon/" + pokemonName)
 		if err != nil {
 			return pokemonDetails, err
 		}
+
 		data, err = io.ReadAll(res.Body)
 		res.Body.Close()
+
 		if res.StatusCode == 404 {
 			return pokemonDetails, errors.New(fmt.Sprintf("Pokemon does not exist"))
 		}
